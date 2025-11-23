@@ -3,6 +3,8 @@ from pyqtgraph.Qt.QtWidgets import QWidget, QVBoxLayout
 import numpy as np
 from datetime import datetime, timedelta
 
+from ._style import style
+
 
 class DateAxisItem(pg.AxisItem):
     def __init__(self, *args, **kwargs):
@@ -92,7 +94,9 @@ class TimeDistWidget(pg.PlotWidget):
 
         self.setMouseEnabled(x=True)
 
-        self.scatter = pg.ScatterPlotItem(size=9, pen=None, brush=pg.mkBrush(50, 120, 220, 35))
+        pc = style.primary_color
+
+        self.scatter = pg.ScatterPlotItem(size=9, pen=None, brush=pg.mkBrush(pc[0], pc[1], pc[2], 35))
         self.addItem(self.scatter)
 
         self.jitter = 0.35
