@@ -1,8 +1,8 @@
 import numpy as np
-from typing import Tuple
+from typing import Tuple, Iterable, Optional
 import pyqtgraph as pg
 from pyqtgraph.Qt.QtCore import pyqtSignal, QRectF, Qt
-from pyqtgraph.Qt.QtGui import QFont, QPainterPath
+from pyqtgraph.Qt.QtGui import QFont, QPainterPath, QColor
 from pyqtgraph.Qt.QtWidgets import QGraphicsPathItem, QWidget, QVBoxLayout, QGraphicsEllipseItem
 
 from ._style import style
@@ -37,13 +37,16 @@ class PiePlotWidget(pg.PlotWidget):
         self._slice_items = []
         self._text_items = []
 
-    def setData(self, values, labels=None, colors=None, explode=None):
+    def setData(self, values: Iterable[int | float],
+                labels: Optional[Iterable[str]] = None,
+                colors: Optional[Iterable[QColor]] = None,
+                explode: Optional[Iterable[float]] = None):
         """
         Set or update the pie chart data.
 
         Parameters
         ----------
-        values : list[float]
+        values : Iterable[int | float]
             Slice values (will be normalized to percentages)
         labels : list[str], optional
             Slice labels. If None, uses "Slice 0", "Slice 1", ...
@@ -52,6 +55,7 @@ class PiePlotWidget(pg.PlotWidget):
         explode : list[float], optional
             Explode offset (0–1) for each slice.
         """
+        assert isinstance(values, Iterable), f"values must be iterable, not {type(values)}"
         self._values = list(values)
         N = len(values)
         self._labels = labels or [f"Slice {i}" for i in range(N)]
