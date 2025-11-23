@@ -94,7 +94,7 @@ class TimeDistWidget(pg.PlotWidget):
 
         self.setMouseEnabled(x=True)
 
-        pc = style.primary_color
+        pc = style.primary_color.getRgb()
 
         self.scatter = pg.ScatterPlotItem(size=9, pen=None, brush=pg.mkBrush(pc[0], pc[1], pc[2], 35))
         self.addItem(self.scatter)
@@ -108,12 +108,12 @@ class TimeDistWidget(pg.PlotWidget):
         view = self.plotItem.vb
         view.sigRangeChanged.connect(self._on_view_changed)
 
-    def setData(self, datetimes):
-        if not datetimes:
+    def setData(self, values: list[datetime]):
+        if not values:
             self.scatter.clear()
             return
 
-        self.timestamps = np.array([dt.timestamp() for dt in datetimes], dtype=np.float64)
+        self.timestamps = np.array([dt.timestamp() for dt in values], dtype=np.float64)
         self.timestamps.sort()
         if len(self.timestamps) == 1:
             center = self.timestamps[0]
