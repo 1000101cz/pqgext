@@ -15,7 +15,8 @@ class PiePlotWidget(pg.PlotWidget):
 
     def __init__(self, parent=None, background=None, donut_ratio: float = 0.0, start_angle: float = 270,
                  label_pen=QPen(Qt.black), label_font: QFont = QFont("Arial", 20, QFont.Bold),
-                 title: Optional[str] = None, title_font: QFont = QFont("Arial", 24, QFont.Bold), **kwargs):
+                 title: Optional[str] = None, title_font: QFont = QFont("Arial", 24, QFont.Bold),
+                 title_color='black', **kwargs):
         super().__init__(parent=parent, background=background, **kwargs)
         self.donut_ratio = donut_ratio
         self.start_angle = start_angle
@@ -23,6 +24,7 @@ class PiePlotWidget(pg.PlotWidget):
         self.label_font = label_font
         self.title = title
         self.title_font = title_font
+        self.title_color = title_color
 
         self.hideAxis('left')
         self.hideAxis('bottom')
@@ -63,6 +65,7 @@ class PiePlotWidget(pg.PlotWidget):
             label_font=self.label_font,
             title=self.title,
             title_font=self.title_font,
+            title_color=self.title_color
         )
         self.pie_item.sliceClicked.connect(self.sliceClicked)
         self.pie_item.sliceHovered.connect(self.sliceHovered)
@@ -88,13 +91,14 @@ class PieChartItem(pg.GraphicsObject):
     def __init__(self, values, labels, colors, explode=None,
                  donut_ratio=0.0, start_angle=90, label_pen=QPen(Qt.black),
                  label_font=QFont("Arial", 20, QFont.Bold), border_pen=pg.mkPen('black', width=2),
-                 title: Optional[str] = None, title_font=QFont("Arial", 16, QFont.Bold)):
+                 title: Optional[str] = None, title_font=QFont("Arial", 16, QFont.Bold), title_color='black'):
         super().__init__()
         self.label_pen = label_pen
         self.label_font = label_font
         self.border_pen = border_pen
         self.title = title
         self.title_font = title_font
+        self.title_color = title_color
 
         self.values = np.asarray(values)
         self.total = self.values.sum()
@@ -121,7 +125,7 @@ class PieChartItem(pg.GraphicsObject):
 
         if self.title:
             if not hasattr(self, 'title_item'):  # create only once
-                self.title_item = pg.TextItem("", color=self.label_pen.color())
+                self.title_item = pg.TextItem("", color=self.title_color)
                 self.title_item.setParentItem(self)
                 self.title_item.setAcceptHoverEvents(False)
                 self.title_item.setAcceptedMouseButtons(Qt.NoButton)
