@@ -1,15 +1,17 @@
+import random
 import pyqtgraph as pg
 import numpy as np
-from PyQt5 import QtGui, QtCore
+from pyqtgraph.Qt.QtCore import *
+from pyqtgraph.Qt.QtGui import *
 from typing import List, Optional
 
 
 class PiePlotWidget(pg.PlotWidget):
-    sliceClicked = QtCore.pyqtSignal(int, float)   # index, value
-    sliceEntered = QtCore.pyqtSignal(int, float)   # index, value  (hover in)
-    sliceExited  = QtCore.pyqtSignal(int)          # index         (hover out)
+    sliceClicked = pyqtSignal(int, float)   # index, value
+    sliceEntered = pyqtSignal(int, float)   # index, value  (hover in)
+    sliceExited  = pyqtSignal(int)          # index         (hover out)
 
-    def __init__(self, parent=None, background=None, donut_ratio: float = 0.0, start_angle: float = 270, label_pen=QtGui.QPen(QtCore.Qt.white), **kwargs):
+    def __init__(self, parent=None, background=None, donut_ratio: float = 0.0, start_angle: float = 270, label_pen=QPen(Qt.white), **kwargs):
         super().__init__(parent=parent, background=background, **kwargs)
         self.donut_ratio = donut_ratio
         self.start_angle = start_angle
@@ -69,12 +71,12 @@ class PiePlotWidget(pg.PlotWidget):
 
 
 class PieChartItem(pg.GraphicsObject):
-    sliceClicked = QtCore.pyqtSignal(int, float)
-    sliceEntered = QtCore.pyqtSignal(int, float)
-    sliceExited  = QtCore.pyqtSignal(int)
+    sliceClicked = pyqtSignal(int, float)
+    sliceEntered = pyqtSignal(int, float)
+    sliceExited  = pyqtSignal(int)
 
     def __init__(self, values, labels, colors, explode=None,
-                 donut_ratio=0.0, start_angle=90, label_pen=QtGui.QPen(QtCore.Qt.white)):
+                 donut_ratio=0.0, start_angle=90, label_pen=QPen(Qt.white)):
         super().__init__()
         self.label_pen = label_pen
         self.values = np.asarray(values)
@@ -91,111 +93,83 @@ class PieChartItem(pg.GraphicsObject):
         self.setAcceptHoverEvents(True)
 
     def generatePicture(self):
-        self.picture = QtGui.QPicture()
-        p = QtGui.QPainter(self.picture)
-        p.setRenderHint(QtGui.QPainter.Antialiasing)
+        self.picture = QPicture()
+        p = QPainter(self.picture)
+        p.setRenderHint(QPainter.Antialiasing)
 
         radius = 100
+        # random so the labels are likely not to be over each other
+        label_radiuses = [radius * (random.randint(30, 100)/100.0 if self.donut_ratio == 0 else (1.0 + self.donut_ratio) * 0.5) for _ in range(len(self.values))]
         inner_radius = radius * self.donut_ratio
-        center = QtCore.QPointF(0, 0)
+        center = QPointF(0, 0)
         current_angle = self.start_angle
+
+        slices = []
 
         for i, value in enumerate(self.values):
             angle_span = 360.0 * value / self.total
+
             explode_offset = self.explode[i] * 12
             if i == self.hovered_index:
                 explode_offset += 8
 
             mid_angle_rad = np.deg2rad(current_angle + angle_span / 2)
-            offset = QtCore.QPointF(
+            offset = QPointF(
                 explode_offset * np.cos(mid_angle_rad),
-                explode_offset * -np.sin(mid_angle_rad)
+                -explode_offset * np.sin(mid_angle_rad)
             )
 
-            path = QtGui.QPainterPath()
-            path.moveTo(center + offset)
-            path.arcTo(QtCore.QRectF(-radius, -radius, radius*2, radius*2).translated(offset),
-                       current_angle, angle_span)
-            if self.donut_ratio > 0:
-                path.arcTo(QtCore.QRectF(-inner_radius, -inner_radius, inner_radius*2, inner_radius*2).translated(offset),
-                           current_angle + angle_span, -angle_span)
-            else:
-                path.lineTo(center + offset)
-            path.closeSubpath()
-
-            p.setBrush(self.colors[i])
-            p.setPen(pg.mkPen('white', width=2.5 if i == self.hovered_index else 2))
-            p.drawPath(path)
-
-            # labels
-            if angle_span < 18:
-                label_radius = radius * 1.30
-                show_leader = True
-                show_percentage = True
-            elif angle_span < 30:
-                label_radius = radius * 0.95
-                show_leader = False
-                show_percentage = False
-            else:
-                label_radius = radius * (0.65 if self.donut_ratio == 0 else (1.0 + self.donut_ratio) * 0.5)
-                show_leader = False
-                show_percentage = False
-            angle_rad = np.deg2rad(current_angle + angle_span / 2)
-
-            label_pos = center + offset + QtCore.QPointF(
-                label_radius * np.cos(angle_rad),
-                -label_radius * np.sin(angle_rad)
-            )
-
-            if show_percentage:
-                text = f"{self.labels[i]}\n{value / self.total * 100:.1f}%"
-            else:
-                text = self.labels[i]
-
-            p.setPen(self.label_pen)
-            p.setFont(QtGui.QFont("Arial", 11, weight=QtGui.QFont.Bold))
-
-            text = self.labels[i]
-            text_rect = p.fontMetrics().boundingRect(text)
-
-            label_center = label_pos
-            label_left = label_pos.x() - text_rect.width() / 2
-            label_right = label_pos.x() + text_rect.width() / 2
-            label_top = label_pos.y() - text_rect.height() / 2
-            label_bottom = label_pos.y() + text_rect.height() / 2
-
-            angle_deg = np.rad2deg(angle_rad) % 360
-            if 45 <= angle_deg < 135:
-                connection_point = QtCore.QPointF(label_pos.x(), label_bottom)
-            elif 135 <= angle_deg < 225:
-                connection_point = QtCore.QPointF(label_right, label_pos.y())
-            elif 225 <= angle_deg < 315:
-                connection_point = QtCore.QPointF(label_pos.x(), label_top)
-            else:
-                connection_point = QtCore.QPointF(label_left, label_pos.y())
-
-            # Slight vertical adjustment if text has multiple lines
-            if '\n' in text:
-                connection_point.setY(label_pos.y() + text_rect.height() / 6)
-
-            if show_leader:
-                edge_pos = center + offset + QtCore.QPointF(
-                    radius * 1.05 * np.cos(angle_rad),
-                    -radius * 1.05 * np.sin(angle_rad)
-                )
-
-                p.setPen(pg.mkPen('white', width=1.8))
-                p.drawLine(edge_pos, connection_point)
-
-            p.save()
-            p.translate(label_pos)
-
-            p.scale(1, -1)
-
-            p.drawText(QtCore.QPointF(-text_rect.width() / 2, text_rect.height() / 3), text)
-            p.restore()
+            # Store data for later use
+            slices.append({
+                'offset': offset,
+                'start_angle': current_angle,
+                'span': angle_span,
+                'color': self.colors[i],
+                'hovered': i == self.hovered_index,
+                'show_label': (self.hovered_index == -1) or (i == self.hovered_index),
+                'label': self.labels[i],
+                'mid_angle': current_angle + angle_span / 2,
+            })
 
             current_angle += angle_span
+
+        for s in slices:
+            path = QPainterPath()
+            path.moveTo(center + s['offset'])
+            path.arcTo(QRectF(-radius, -radius, radius * 2, radius * 2).translated(s['offset']),
+                       s['start_angle'], s['span'])
+            if self.donut_ratio > 0:
+                path.arcTo(
+                    QRectF(-inner_radius, -inner_radius, inner_radius * 2, inner_radius * 2).translated(s['offset']),
+                    s['start_angle'] + s['span'], -s['span'])
+            else:
+                path.lineTo(center + s['offset'])
+            path.closeSubpath()
+
+            p.setBrush(s['color'])
+            p.setPen(pg.mkPen('white', width=2.5 if s['hovered'] else 2))
+            p.drawPath(path)
+
+        p.setFont(QFont("Arial", 11, QFont.Bold))
+
+        for i, s in enumerate(slices):
+            if not s['show_label']:
+                continue
+            if s['span'] <= 8 and self.hovered_index != slices.index(s):
+                continue
+
+            angle_rad = np.deg2rad(s['mid_angle'])
+            label_pos = center + s['offset'] + QPointF(
+                label_radiuses[i] * np.cos(angle_rad),
+                -label_radiuses[i] * np.sin(angle_rad)
+            )
+
+            p.save()
+            p.translate(label_pos.x(), label_pos.y())
+            p.scale(1, -1)
+            p.setPen(self.label_pen)
+            p.drawText(QRectF(-1000, -1000, 2000, 2000), Qt.AlignCenter, s['label'])
+            p.restore()
 
         p.end()
 
@@ -203,7 +177,7 @@ class PieChartItem(pg.GraphicsObject):
         p.drawPicture(0, 0, self.picture)
 
     def boundingRect(self):
-        return QtCore.QRectF(-130, -130, 260, 260)
+        return QRectF(-130, -130, 260, 260)
 
     def hoverEnterEvent(self, ev):
         self._handle_hover(ev.pos(), enter=True)
