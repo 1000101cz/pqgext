@@ -7,9 +7,9 @@ from typing import List, Optional
 
 
 class PiePlotWidget(pg.PlotWidget):
-    sliceClicked = pyqtSignal(int, float)   # index, value
-    sliceEntered = pyqtSignal(int, float)   # index, value  (hover in)
-    sliceExited  = pyqtSignal(int)          # index         (hover out)
+    sliceClicked = pyqtSignal(int, str, float)   # index, label, value
+    sliceHovered = pyqtSignal(int, str, float)
+    sliceExited  = pyqtSignal(int, str)
 
     def __init__(self, parent=None, background=None, donut_ratio: float = 0.0, start_angle: float = 270, label_pen=QPen(Qt.white), **kwargs):
         super().__init__(parent=parent, background=background, **kwargs)
@@ -55,7 +55,7 @@ class PiePlotWidget(pg.PlotWidget):
             label_pen=self.label_pen,
         )
         self.pie_item.sliceClicked.connect(self.sliceClicked)
-        self.pie_item.sliceEntered.connect(self.sliceEntered)
+        self.pie_item.sliceHovered.connect(self.sliceHovered)
         self.pie_item.sliceExited.connect(self.sliceExited)
         self.addItem(self.pie_item)
 
@@ -71,9 +71,9 @@ class PiePlotWidget(pg.PlotWidget):
 
 
 class PieChartItem(pg.GraphicsObject):
-    sliceClicked = pyqtSignal(int, float)
-    sliceEntered = pyqtSignal(int, float)
-    sliceExited  = pyqtSignal(int)
+    sliceClicked = pyqtSignal(int, str, float)
+    sliceHovered = pyqtSignal(int, str, float)
+    sliceExited  = pyqtSignal(int, str)
 
     def __init__(self, values, labels, colors, explode=None,
                  donut_ratio=0.0, start_angle=90, label_pen=QPen(Qt.white)):
@@ -195,13 +195,13 @@ class PieChartItem(pg.GraphicsObject):
             self.hovered_index = -1
             self.generatePicture()
             self.update()
-            self.sliceExited.emit(old)
+            self.sliceExited.emit(old, self.labels[old])
         ev.accept()
 
     def mousePressEvent(self, ev):
         index = self._get_slice_at_pos(ev.pos())
         if index >= 0:
-            self.sliceClicked.emit(index, float(self.values[index]))
+            self.sliceClicked.emit(index, self.labels[index], float(self.values[index]))
             print(f"CLICKED → {self.labels[index]} ({self.values[index]:.1f})")
         ev.accept()
 
@@ -214,10 +214,10 @@ class PieChartItem(pg.GraphicsObject):
             self.update()
 
             if index >= 0:
-                self.sliceEntered.emit(index, float(self.values[index]))
+                self.sliceHovered.emit(index, self.labels[index], float(self.values[index]))
                 print(f"HOVER IN → {self.labels[index]} ({self.values[index]:.1f})")
             elif old >= 0:
-                self.sliceExited.emit(old)
+                self.sliceExited.emit(old, self.labels[old])
                 print(f"HOVER OUT → {self.labels[old]}")
 
     def _get_slice_at_pos(self, pos):
