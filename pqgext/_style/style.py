@@ -1,13 +1,18 @@
+import pyqtgraph as pg
 from pyqtgraph.Qt.QtGui import QColor
 
 from .._settings import pqgext_settings as pes
 
 
 class PQGExtStyle:
+    @staticmethod
+    def generate_palette(length: int, alpha: int = 255):
+        return [pg.intColor(i, length, alpha=alpha) for i in range(length)]
+
     @property
     def palette(self):
         if pes.palette is None:
-            def_palette = [QColor('blue'), QColor('red'), QColor('green'), QColor('orange'), QColor('purple'), QColor('pink')]
+            def_palette = self.generate_palette(10)
             return def_palette
         else:
             return pes.palette

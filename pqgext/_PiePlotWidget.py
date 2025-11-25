@@ -5,17 +5,24 @@ from pyqtgraph.Qt.QtCore import *
 from pyqtgraph.Qt.QtGui import *
 from typing import List, Optional
 
+from ._style import style
+
 
 class PiePlotWidget(pg.PlotWidget):
     sliceClicked = pyqtSignal(int, str, float)   # index, label, value
     sliceHovered = pyqtSignal(int, str, float)
     sliceExited  = pyqtSignal(int, str)
 
-    def __init__(self, parent=None, background=None, donut_ratio: float = 0.0, start_angle: float = 270, label_pen=QPen(Qt.white), **kwargs):
+    def __init__(self, parent=None, background=None, donut_ratio: float = 0.0, start_angle: float = 270,
+                 label_pen=QPen(Qt.black), label_font: QFont = QFont("Arial", 20, QFont.Bold),
+                 title: Optional[str] = None, title_font: QFont = QFont("Arial", 24, QFont.Bold), **kwargs):
         super().__init__(parent=parent, background=background, **kwargs)
         self.donut_ratio = donut_ratio
         self.start_angle = start_angle
         self.label_pen = label_pen
+        self.label_font = label_font
+        self.title = title
+        self.title_font = title_font
 
         self.hideAxis('left')
         self.hideAxis('bottom')
@@ -35,7 +42,7 @@ class PiePlotWidget(pg.PlotWidget):
     def setData(self, values, labels=None, colors=None, explode=None):
         self.values = np.asarray(values, dtype=float)
         self.labels = labels or [f"Slice {i}" for i in range(len(values))]
-        self.colors = colors or [pg.intColor(i, len(values), alpha=220) for i in range(len(values))]
+        self.colors = colors or style.generate_palette(len(values), alpha=220)
         self.explode = explode or [0.0] * len(values)
 
         self.clear()
@@ -53,6 +60,9 @@ class PiePlotWidget(pg.PlotWidget):
             donut_ratio=self.donut_ratio,
             start_angle=self.start_angle,
             label_pen=self.label_pen,
+            label_font=self.label_font,
+            title=self.title,
+            title_font=self.title_font,
         )
         self.pie_item.sliceClicked.connect(self.sliceClicked)
         self.pie_item.sliceHovered.connect(self.sliceHovered)
@@ -76,9 +86,16 @@ class PieChartItem(pg.GraphicsObject):
     sliceExited  = pyqtSignal(int, str)
 
     def __init__(self, values, labels, colors, explode=None,
-                 donut_ratio=0.0, start_angle=90, label_pen=QPen(Qt.white)):
+                 donut_ratio=0.0, start_angle=90, label_pen=QPen(Qt.black),
+                 label_font=QFont("Arial", 20, QFont.Bold), border_pen=pg.mkPen('black', width=2),
+                 title: Optional[str] = None, title_font=QFont("Arial", 16, QFont.Bold)):
         super().__init__()
         self.label_pen = label_pen
+        self.label_font = label_font
+        self.border_pen = border_pen
+        self.title = title
+        self.title_font = title_font
+
         self.values = np.asarray(values)
         self.total = self.values.sum()
         self.labels = labels
@@ -93,11 +110,35 @@ class PieChartItem(pg.GraphicsObject):
         self.setAcceptHoverEvents(True)
 
     def generatePicture(self):
+        radius = 100
+
+        if hasattr(self, '_label_items'):
+            for item in self._label_items:
+                item.setParentItem(None)
+                if item.scene():
+                    item.scene().removeItem(item)
+        self._label_items = []
+
+        if self.title:
+            if not hasattr(self, 'title_item'):  # create only once
+                self.title_item = pg.TextItem("", color=self.label_pen.color())
+                self.title_item.setParentItem(self)
+                self.title_item.setAcceptHoverEvents(False)
+                self.title_item.setAcceptedMouseButtons(Qt.NoButton)
+
+            # Update text and font
+            self.title_item.setFont(self.title_font)
+            self.title_item.setText(self.title)
+
+            # Position it at the top center (you can tweak Y offset)
+            title_y = radius + 20  # 20 units above the pie
+            self.title_item.setPos(0, title_y)
+            self.title_item.setAnchor((0.5, 1))
+
         self.picture = QPicture()
         p = QPainter(self.picture)
         p.setRenderHint(QPainter.Antialiasing)
 
-        radius = 100
         if self.hovered_index == -1:
             # random so the labels are likely not to be over each other
             label_radiuses = [radius * (random.randint(30, 100)/100.0 if self.donut_ratio == 0 else (1.0 + self.donut_ratio) * 0.5) for _ in range(len(self.values))]
@@ -113,7 +154,7 @@ class PieChartItem(pg.GraphicsObject):
             angle_span = 360.0 * value / self.total
 
             explode_offset = self.explode[i] * 12
-            if i == self.hovered_index:
+            if i == self.hovered_index and len(self.values) > 1:
                 explode_offset += 8
 
             mid_angle_rad = np.deg2rad(current_angle + angle_span / 2)
@@ -149,7 +190,7 @@ class PieChartItem(pg.GraphicsObject):
             path.closeSubpath()
 
             p.setBrush(s['color'])
-            p.setPen(pg.mkPen('white', width=2.5 if s['hovered'] else 2))
+            p.setPen(self.border_pen)
             p.drawPath(path)
 
         p.setFont(QFont("Arial", 11, QFont.Bold))
@@ -166,12 +207,16 @@ class PieChartItem(pg.GraphicsObject):
                 -label_radiuses[i] * np.sin(angle_rad)
             )
 
-            p.save()
-            p.translate(label_pos.x(), label_pos.y())
-            p.scale(1, -1)
-            p.setPen(self.label_pen)
-            p.drawText(QRectF(-1000, -1000, 2000, 2000), Qt.AlignCenter, s['label'])
-            p.restore()
+            txt = pg.TextItem(
+                text=s['label'],
+                color=self.label_pen.color(),
+                anchor=(0.5, 0.5)  # perfectly centered
+            )
+            txt.setFont(self.label_font)  # ←←← real 11 pt font that scales properly!
+            txt.setParentItem(self)  # child of the pie → moves/zooms with it
+            txt.setPos(label_pos)
+            txt.setAcceptHoverEvents(False)
+            self._label_items.append(txt)
 
         p.end()
 
