@@ -82,7 +82,6 @@ class PieChartItem(pg.GraphicsObject):
         self.hovered_index = -1
         self.generatePicture()
 
-        # Enable hover events
         self.setAcceptHoverEvents(True)
 
     def generatePicture(self):
@@ -107,7 +106,6 @@ class PieChartItem(pg.GraphicsObject):
                 explode_offset * -np.sin(mid_angle_rad)
             )
 
-            # ────── Draw the slice (unchanged) ──────
             path = QtGui.QPainterPath()
             path.moveTo(center + offset)
             path.arcTo(QtCore.QRectF(-radius, -radius, radius*2, radius*2).translated(offset),
@@ -123,8 +121,7 @@ class PieChartItem(pg.GraphicsObject):
             p.setPen(pg.mkPen('white', width=2.5 if i == self.hovered_index else 2))
             p.drawPath(path)
 
-            # ────── NEW CLEAN LABELS (this is the only part that changed) ──────
-            # Position the label on a ray at 65% of the radius (70% for donut)
+            # labels
             label_radius = radius * (0.65 if self.donut_ratio == 0 else (1.0 + self.donut_ratio) * 0.5)
             angle_rad = np.deg2rad(current_angle + angle_span / 2)
 
@@ -142,11 +139,6 @@ class PieChartItem(pg.GraphicsObject):
             p.save()
             p.translate(label_pos)
 
-            # Correct way: rotate 180° only if in bottom half, then flip back vertically
-            #if np.sin(angle_rad) < 0:  # bottom half
-            #    p.rotate(180)
-            #    # This single line fixes the horizontal flip!
-            #    p.scale(1, -1)
             p.scale(1, -1)
 
             p.drawText(QtCore.QPointF(-text_rect.width() / 2, text_rect.height() / 3), text)
