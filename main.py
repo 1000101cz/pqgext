@@ -53,8 +53,8 @@ def show_TimeDistWidget():
 def show_PiePlotWidget():
     from pqgext import PiePlotWidget
     win = QMainWindow()
-    plot = PiePlotWidget()
-    vls = [random.randint(5, 100) for _ in range(6)]
+    plot = PiePlotWidget(background='k')
+    vls = [random.randint(5, 100) for _ in range(10)]
     plot.setData(values=vls)
     plot.add_legend()
     win.setCentralWidget(plot)

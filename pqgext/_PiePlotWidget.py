@@ -9,14 +9,18 @@ class PiePlotWidget(pg.PlotWidget):
     sliceEntered = QtCore.pyqtSignal(int, float)   # index, value  (hover in)
     sliceExited  = QtCore.pyqtSignal(int)          # index         (hover out)
 
-    def __init__(self, parent=None, donut_ratio: float = 0.0, start_angle: float = 90):
-        super().__init__(parent=parent)
+    def __init__(self, parent=None, background=None, donut_ratio: float = 0.0, start_angle: float = 270, label_pen=QtGui.QPen(QtCore.Qt.white), **kwargs):
+        super().__init__(parent=parent, background=background, **kwargs)
         self.donut_ratio = donut_ratio
         self.start_angle = start_angle
+        self.label_pen = label_pen
 
         self.hideAxis('left')
         self.hideAxis('bottom')
         self.setAspectLocked(True)
+
+        self.getViewBox().setMouseEnabled(x=False, y=False)
+        self.getViewBox().wheelEvent = lambda ev: None
 
         self.values = []
         self.labels = []
@@ -45,7 +49,8 @@ class PiePlotWidget(pg.PlotWidget):
             colors=self.colors,
             explode=self.explode,
             donut_ratio=self.donut_ratio,
-            start_angle=self.start_angle
+            start_angle=self.start_angle,
+            label_pen=self.label_pen,
         )
         self.pie_item.sliceClicked.connect(self.sliceClicked)
         self.pie_item.sliceEntered.connect(self.sliceEntered)
@@ -69,8 +74,9 @@ class PieChartItem(pg.GraphicsObject):
     sliceExited  = QtCore.pyqtSignal(int)
 
     def __init__(self, values, labels, colors, explode=None,
-                 donut_ratio=0.0, start_angle=90):
+                 donut_ratio=0.0, start_angle=90, label_pen=QtGui.QPen(QtCore.Qt.white)):
         super().__init__()
+        self.label_pen = label_pen
         self.values = np.asarray(values)
         self.total = self.values.sum()
         self.labels = labels
@@ -122,7 +128,18 @@ class PieChartItem(pg.GraphicsObject):
             p.drawPath(path)
 
             # labels
-            label_radius = radius * (0.65 if self.donut_ratio == 0 else (1.0 + self.donut_ratio) * 0.5)
+            if angle_span < 18:
+                label_radius = radius * 1.30
+                show_leader = True
+                show_percentage = True
+            elif angle_span < 30:
+                label_radius = radius * 0.95
+                show_leader = False
+                show_percentage = False
+            else:
+                label_radius = radius * (0.65 if self.donut_ratio == 0 else (1.0 + self.donut_ratio) * 0.5)
+                show_leader = False
+                show_percentage = False
             angle_rad = np.deg2rad(current_angle + angle_span / 2)
 
             label_pos = center + offset + QtCore.QPointF(
@@ -130,11 +147,45 @@ class PieChartItem(pg.GraphicsObject):
                 -label_radius * np.sin(angle_rad)
             )
 
-            p.setPen(QtGui.QPen(QtCore.Qt.white))
+            if show_percentage:
+                text = f"{self.labels[i]}\n{value / self.total * 100:.1f}%"
+            else:
+                text = self.labels[i]
+
+            p.setPen(self.label_pen)
             p.setFont(QtGui.QFont("Arial", 11, weight=QtGui.QFont.Bold))
 
             text = self.labels[i]
             text_rect = p.fontMetrics().boundingRect(text)
+
+            label_center = label_pos
+            label_left = label_pos.x() - text_rect.width() / 2
+            label_right = label_pos.x() + text_rect.width() / 2
+            label_top = label_pos.y() - text_rect.height() / 2
+            label_bottom = label_pos.y() + text_rect.height() / 2
+
+            angle_deg = np.rad2deg(angle_rad) % 360
+            if 45 <= angle_deg < 135:
+                connection_point = QtCore.QPointF(label_pos.x(), label_bottom)
+            elif 135 <= angle_deg < 225:
+                connection_point = QtCore.QPointF(label_right, label_pos.y())
+            elif 225 <= angle_deg < 315:
+                connection_point = QtCore.QPointF(label_pos.x(), label_top)
+            else:
+                connection_point = QtCore.QPointF(label_left, label_pos.y())
+
+            # Slight vertical adjustment if text has multiple lines
+            if '\n' in text:
+                connection_point.setY(label_pos.y() + text_rect.height() / 6)
+
+            if show_leader:
+                edge_pos = center + offset + QtCore.QPointF(
+                    radius * 1.05 * np.cos(angle_rad),
+                    -radius * 1.05 * np.sin(angle_rad)
+                )
+
+                p.setPen(pg.mkPen('white', width=1.8))
+                p.drawLine(edge_pos, connection_point)
 
             p.save()
             p.translate(label_pos)
