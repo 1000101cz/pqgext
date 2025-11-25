@@ -1,256 +1,219 @@
-import numpy as np
-from typing import Tuple, Iterable, Optional
 import pyqtgraph as pg
-from pyqtgraph.Qt.QtCore import pyqtSignal, QRectF, Qt
-from pyqtgraph.Qt.QtGui import QFont, QPainterPath, QColor
-from pyqtgraph.Qt.QtWidgets import QGraphicsPathItem, QWidget, QVBoxLayout, QGraphicsEllipseItem
-
-from ._style import style
+import numpy as np
+from PyQt5 import QtGui, QtCore
+from typing import List, Optional
 
 
 class PiePlotWidget(pg.PlotWidget):
-    sliceClicked = pyqtSignal(int, str, float)  # index, label, value
-    sliceHovered = pyqtSignal(int, str, float)
+    sliceClicked = QtCore.pyqtSignal(int, float)   # index, value
+    sliceEntered = QtCore.pyqtSignal(int, float)   # index, value  (hover in)
+    sliceExited  = QtCore.pyqtSignal(int)          # index         (hover out)
 
-    def __init__(self, parent=None, background=None, **kwargs):
-        super().__init__(parent=parent, background=background, **kwargs)
+    def __init__(self, parent=None, donut_ratio: float = 0.0, start_angle: float = 90):
+        super().__init__(parent=parent)
+        self.donut_ratio = donut_ratio
+        self.start_angle = start_angle
 
-        # Appearance settings
-        self.setAspectLocked(True)
         self.hideAxis('left')
         self.hideAxis('bottom')
-        self.hideButtons()
-        self.setContentsMargins(0, 0, 0, 0)
+        self.setAspectLocked(True)
 
-        self.getViewBox().setMouseEnabled(x=False, y=False)
-        self.getViewBox().wheelEvent = lambda ev: None
+        self.values = []
+        self.labels = []
+        self.colors = []
+        self.explode = []
 
-        # Pie data & visual settings
-        self._values = []
-        self._labels = []
-        self._colors = []
-        self._explode = []  # explode distance per slice (0 = none)
-        self._text_color = 'black'
-        self._radius = 200
-        self._start_angle = 270  # 12 o'clock start
+        self.pie_item = None
+        self.legend = None
 
-        self._slice_items = []
-        self._text_items = []
+    def setData(self, values, labels=None, colors=None, explode=None):
+        self.values = np.asarray(values, dtype=float)
+        self.labels = labels or [f"Slice {i}" for i in range(len(values))]
+        self.colors = colors or [pg.intColor(i, len(values), alpha=220) for i in range(len(values))]
+        self.explode = explode or [0.0] * len(values)
 
-    def setData(self, values: Iterable[int | float],
-                labels: Optional[Iterable[str]] = None,
-                colors: Optional[Iterable[QColor]] = None,
-                explode: Optional[Iterable[float]] = None):
-        """
-        Set or update the pie chart data.
+        self.clear()
+        if self.legend:
+            self.legend.scene().removeItem(self.legend)
 
-        Parameters
-        ----------
-        values : Iterable[int | float]
-            Slice values (will be normalized to percentages)
-        labels : list[str], optional
-            Slice labels. If None, uses "Slice 0", "Slice 1", ...
-        colors : list[str or QColor], optional
-            Custom colors. If None, uses pyqtgraph default color cycle.
-        explode : list[float], optional
-            Explode offset (0–1) for each slice.
-        """
-        assert isinstance(values, Iterable), f"values must be iterable, not {type(values)}"
-        self._values = list(values)
-        N = len(values)
-        self._labels = labels or [f"Slice {i}" for i in range(N)]
-        self._colors = colors or [style.palette[i%(len(style.palette))] for i in range(N)]
-        self._explode = explode or [0.0] * N
+        self._create_pie()
 
-        self._redraw()
-
-    def setRadius(self, radius: float):
-        self._radius = radius
-        self._redraw()
-
-    def setStartAngle(self, degrees: float):
-        self._start_angle = degrees % 360
-        self._redraw()
-
-    def setTextColor(self, color):
-        self._text_color = color
-        self._redraw()
-
-    def clear(self):
-        self._values = []
-        self._redraw()
-
-    @staticmethod
-    def _get_anchor(angle: float) -> Tuple[float, float]:
-        angle = angle % 360
-        if 22.5 <= angle < 157.5:
-            a = 0
-        elif (angle >= 337.5) or (angle < 22.5) or (157.5 <= angle < 202.5):
-            a = 0.5
-        elif 202.5 <= angle < 337.5:
-            a = 1
-        else:
-            raise ValueError
-
-        if angle >= 292.5 or angle < 67.5:
-            b = 0
-        elif (67.5 <= angle < 112.5) or (247.5 <= angle < 292.5):
-            b = 0.5
-        elif 112.5 <= angle < 247.5:
-            b = 1
-        else:
-            raise ValueError
-
-        return a, b
-
-    def _redraw(self):
-        vb = self.getViewBox()
-        vb.clear()  # remove old items
-        self._slice_items.clear()
-        self._text_items.clear()
-
-        if not self._values:
-            vb.autoRange()
-            return
-
-        total = sum(self._values)
-        cum = 0
-
-        for i, (val, label, color, expl) in enumerate(zip(self._values, self._labels, self._colors, self._explode)):
-
-            span = 360.0 * val / total
-
-            if val == total:
-                mid_rad = np.deg2rad(self._start_angle)
-                explode_offset = self._radius * expl
-                center_x = explode_offset * np.cos(mid_rad)
-                center_y = explode_offset * np.sin(mid_rad)
-
-                # Draw a simple filled circle → no seam!
-                ellipse = QGraphicsEllipseItem(center_x - self._radius, center_y - self._radius, self._radius * 2, self._radius * 2)
-                ellipse.setBrush(pg.mkBrush(color))
-                ellipse.setPen(pg.mkPen(None))  # no border
-                ellipse.setZValue(10 - i)
-                vb.addItem(ellipse)
-                self._slice_items.append(ellipse)
-
-                # Hover/click (we have to set the methods on the item itself)
-                ellipse.setAcceptHoverEvents(True)
-                ellipse.mousePressEvent = lambda ev, idx=i: self._on_slice_clicked(ev, idx)
-                ellipse.hoverEnterEvent = lambda ev, idx=i: self._on_slice_hover(ev, idx, enter=True)
-                ellipse.hoverLeaveEvent = lambda ev, idx=i: self._on_slice_hover(ev, idx, enter=False)
-
-                # Label (placed at the configured start angle, looks natural)
-                label_angle_deg = self._start_angle % 360
-                label_angle = np.deg2rad(label_angle_deg)
-                label_radius = self._radius * 1.25 * (1 + expl * 0.5)
-                txt_x = center_x + label_radius * np.cos(label_angle)
-                txt_y = center_y - label_radius * np.sin(label_angle)
-
-                percent = val / total * 100
-                txt = pg.TextItem(f"{label}\n100%", color=self._text_color, anchor=(0.5, 0.5))
-                txt.setFont(QFont("Arial", 10, weight=QFont.Bold))
-                txt.setPos(txt_x, txt_y)
-                txt.setZValue(100)
-                vb.addItem(txt)
-                self._text_items.append(txt)
-
-                cum += span
-                continue
-
-            if span == 0:
-                continue
-
-            # Explode: move slice outward
-            mid_angle = self._start_angle + cum + span / 2
-            mid_rad = np.deg2rad(mid_angle)
-            explode_offset = self._radius * expl
-            center_x = explode_offset * np.cos(mid_rad)
-            center_y = explode_offset * np.sin(mid_rad)
-
-            # Create perfect arc using QPainterPath.arcTo()
-            path = QPainterPath()
-            path.moveTo(center_x, center_y)
-            rect = QRectF(center_x - self._radius, center_y - self._radius, self._radius * 2, self._radius * 2)
-            path.arcTo(rect, self._start_angle + cum, span)
-            path.closeSubpath()
-
-            # Graphics item
-            item = QGraphicsPathItem(path)
-            item.setBrush(pg.mkBrush(color))
-            item.setZValue(10 - i)
-            vb.addItem(item)
-            self._slice_items.append(item)
-
-            # Hover & click handling
-            item.setAcceptHoverEvents(True)
-            item.mousePressEvent = lambda ev, idx=i: self._on_slice_clicked(ev, idx)
-            item.hoverEnterEvent = lambda ev, idx=i: self._on_slice_hover(ev, idx, enter=True)
-            item.hoverLeaveEvent = lambda ev, idx=i: self._on_slice_hover(ev, idx, enter=False)
-
-            # Label
-            label_angle_deg = (self._start_angle + cum + span / 2) % 360
-            label_angle = np.deg2rad(label_angle_deg)
-            label_radius = self._radius * 1.25 * (1 + expl * 0.5)
-            txt_x = center_x + label_radius * np.cos(label_angle)
-            txt_y = center_y - label_radius * np.sin(label_angle)
-
-            # print(f"Anchor for {label} - {anchor}     [{txt_x}, {txt_y}]")
-
-            percent = val / total * 100
-            txt = pg.TextItem(f"{label}\n{percent:.1f}%", color=self._text_color, anchor=(0.5, 0.5))
-            txt.setFont(QFont("Arial", 10, weight=QFont.Bold))
-            txt.setPos(txt_x, txt_y)
-            txt.setZValue(100)
-
-            vb.addItem(txt)
-            self._text_items.append(txt)
-
-            cum += span
-
-        # Auto fit view with small padding
-        vb.autoRange(padding=0.15)
+    def _create_pie(self):
+        self.pie_item = PieChartItem(
+            values=self.values,
+            labels=self.labels,
+            colors=self.colors,
+            explode=self.explode,
+            donut_ratio=self.donut_ratio,
+            start_angle=self.start_angle
+        )
+        self.pie_item.sliceClicked.connect(self.sliceClicked)
+        self.pie_item.sliceEntered.connect(self.sliceEntered)
+        self.pie_item.sliceExited.connect(self.sliceExited)
+        self.addItem(self.pie_item)
 
     def add_legend(self):
-        """
-        Add a legend to the pie chart.
-        """
-        # Remove old legend if exists
-        if hasattr(self, "_legend"):
-            self._legend.close()
-            self.removeItem(self._legend)
-
-        # Create legend (size, offset)
-        self._legend = pg.LegendItem(offset=(0, 0))
-        self._legend.setParentItem(self.getViewBox())
-
-        # Add one entry per slice
-        for i, (label, color) in enumerate(zip(self._labels, self._colors)):
-            # Create a dummy plot item just for the color swatch
-            dummy = pg.ScatterPlotItem(x=[0], y=[0], pen=None, brush=pg.mkBrush(color), size=12, symbol='s')
-            self._legend.addItem(dummy, label)
-
-    def _on_slice_clicked(self, event, index):
-        if event.button() == Qt.LeftButton:
-            self.sliceClicked.emit(index, self._labels[index], self._values[index])
-
-    def _on_slice_hover(self, event, index, enter=True):
-        item = self._slice_items[index]
-        if enter:
-            item.setPen(pg.mkPen('k', width=4))
-            self.sliceHovered.emit(index, self._labels[index], self._values[index])
-        else:
-            item.setPen(pg.mkPen('k', width=0))
+        if not self.labels:
+            return
+        self.legend = pg.LegendItem(offset=(80, 20))
+        self.legend.setParentItem(self.getViewBox())
+        for i, (label, color) in enumerate(zip(self.labels, self.colors)):
+            spot = pg.ScatterPlotItem(size=15, pen=pg.mkPen('w', width=2),
+                                      brush=pg.mkBrush(color), symbol='s')
+            self.legend.addItem(spot, label)
 
 
-def place_PiePlotWidget(placeholder: QWidget, parent=None, background=None) -> PiePlotWidget:
-    for child in placeholder.findChildren(QWidget):
-        child.deleteLater()
+class PieChartItem(pg.GraphicsObject):
+    sliceClicked = QtCore.pyqtSignal(int, float)
+    sliceEntered = QtCore.pyqtSignal(int, float)
+    sliceExited  = QtCore.pyqtSignal(int)
 
-    pie = PiePlotWidget(parent=parent, background=background)
+    def __init__(self, values, labels, colors, explode=None,
+                 donut_ratio=0.0, start_angle=90):
+        super().__init__()
+        self.values = np.asarray(values)
+        self.total = self.values.sum()
+        self.labels = labels
+        self.colors = [pg.mkBrush(c) for c in colors]
+        self.explode = np.array(explode or [0.0] * len(values))
+        self.donut_ratio = donut_ratio
+        self.start_angle = start_angle
 
-    layout = QVBoxLayout(placeholder)
-    layout.setContentsMargins(0, 0, 0, 0)
-    layout.addWidget(pie)
+        self.hovered_index = -1
+        self.generatePicture()
 
-    return pie
+        # Enable hover events
+        self.setAcceptHoverEvents(True)
+
+    def generatePicture(self):
+        self.picture = QtGui.QPicture()
+        p = QtGui.QPainter(self.picture)
+        p.setRenderHint(QtGui.QPainter.Antialiasing)
+
+        radius = 100
+        inner_radius = radius * self.donut_ratio
+        center = QtCore.QPointF(0, 0)
+        current_angle = self.start_angle
+
+        for i, value in enumerate(self.values):
+            angle_span = 360.0 * value / self.total
+            explode_offset = self.explode[i] * 12
+            if i == self.hovered_index:
+                explode_offset += 8
+
+            mid_angle_rad = np.deg2rad(current_angle + angle_span / 2)
+            offset = QtCore.QPointF(
+                explode_offset * np.cos(mid_angle_rad),
+                explode_offset * -np.sin(mid_angle_rad)
+            )
+
+            # ────── Draw the slice (unchanged) ──────
+            path = QtGui.QPainterPath()
+            path.moveTo(center + offset)
+            path.arcTo(QtCore.QRectF(-radius, -radius, radius*2, radius*2).translated(offset),
+                       current_angle, angle_span)
+            if self.donut_ratio > 0:
+                path.arcTo(QtCore.QRectF(-inner_radius, -inner_radius, inner_radius*2, inner_radius*2).translated(offset),
+                           current_angle + angle_span, -angle_span)
+            else:
+                path.lineTo(center + offset)
+            path.closeSubpath()
+
+            p.setBrush(self.colors[i])
+            p.setPen(pg.mkPen('white', width=2.5 if i == self.hovered_index else 2))
+            p.drawPath(path)
+
+            # ────── NEW CLEAN LABELS (this is the only part that changed) ──────
+            # Position the label on a ray at 65% of the radius (70% for donut)
+            label_radius = radius * (0.65 if self.donut_ratio == 0 else (1.0 + self.donut_ratio) * 0.5)
+            angle_rad = np.deg2rad(current_angle + angle_span / 2)
+
+            label_pos = center + offset + QtCore.QPointF(
+                label_radius * np.cos(angle_rad),
+                -label_radius * np.sin(angle_rad)
+            )
+
+            p.setPen(QtGui.QPen(QtCore.Qt.white))
+            p.setFont(QtGui.QFont("Arial", 11, weight=QtGui.QFont.Bold))
+
+            text = self.labels[i]
+            text_rect = p.fontMetrics().boundingRect(text)
+
+            p.save()
+            p.translate(label_pos)
+
+            # Correct way: rotate 180° only if in bottom half, then flip back vertically
+            #if np.sin(angle_rad) < 0:  # bottom half
+            #    p.rotate(180)
+            #    # This single line fixes the horizontal flip!
+            #    p.scale(1, -1)
+            p.scale(1, -1)
+
+            p.drawText(QtCore.QPointF(-text_rect.width() / 2, text_rect.height() / 3), text)
+            p.restore()
+
+            current_angle += angle_span
+
+        p.end()
+
+    def paint(self, p, *args):
+        p.drawPicture(0, 0, self.picture)
+
+    def boundingRect(self):
+        return QtCore.QRectF(-130, -130, 260, 260)
+
+    def hoverEnterEvent(self, ev):
+        self._handle_hover(ev.pos(), enter=True)
+        ev.accept()
+
+    def hoverMoveEvent(self, ev):
+        self._handle_hover(ev.pos(), enter=True)
+        ev.accept()
+
+    def hoverLeaveEvent(self, ev):
+        if self.hovered_index != -1:
+            old = self.hovered_index
+            self.hovered_index = -1
+            self.generatePicture()
+            self.update()
+            self.sliceExited.emit(old)
+        ev.accept()
+
+    def mousePressEvent(self, ev):
+        index = self._get_slice_at_pos(ev.pos())
+        if index >= 0:
+            self.sliceClicked.emit(index, float(self.values[index]))
+            print(f"CLICKED → {self.labels[index]} ({self.values[index]:.1f})")
+        ev.accept()
+
+    def _handle_hover(self, pos, enter=True):
+        index = self._get_slice_at_pos(pos)
+        if index != self.hovered_index:
+            old = self.hovered_index
+            self.hovered_index = index
+            self.generatePicture()
+            self.update()
+
+            if index >= 0:
+                self.sliceEntered.emit(index, float(self.values[index]))
+                print(f"HOVER IN → {self.labels[index]} ({self.values[index]:.1f})")
+            elif old >= 0:
+                self.sliceExited.emit(old)
+                print(f"HOVER OUT → {self.labels[old]}")
+
+    def _get_slice_at_pos(self, pos):
+        dx, dy = pos.x(), pos.y()
+        dist = np.hypot(dx, dy)
+        if dist > 115 or (self.donut_ratio > 0 and dist < self.donut_ratio * 100):
+            return -1
+
+        angle = np.degrees(np.arctan2(-dy, dx)) % 360
+        angle = (angle - self.start_angle) % 360
+
+        cum = 0
+        for i, val in enumerate(self.values):
+            span = 360 * val / self.total
+            if cum <= angle < cum + span:
+                return i
+            cum += span
+        return -1
