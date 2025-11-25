@@ -98,8 +98,11 @@ class PieChartItem(pg.GraphicsObject):
         p.setRenderHint(QPainter.Antialiasing)
 
         radius = 100
-        # random so the labels are likely not to be over each other
-        label_radiuses = [radius * (random.randint(30, 100)/100.0 if self.donut_ratio == 0 else (1.0 + self.donut_ratio) * 0.5) for _ in range(len(self.values))]
+        if self.hovered_index == -1:
+            # random so the labels are likely not to be over each other
+            label_radiuses = [radius * (random.randint(30, 100)/100.0 if self.donut_ratio == 0 else (1.0 + self.donut_ratio) * 0.5) for _ in range(len(self.values))]
+        else:
+            label_radiuses = [radius * (0.65 if self.donut_ratio == 0 else (1.0 + self.donut_ratio) * 0.5) for _ in range(len(self.values))]
         inner_radius = radius * self.donut_ratio
         center = QPointF(0, 0)
         current_angle = self.start_angle
@@ -119,7 +122,6 @@ class PieChartItem(pg.GraphicsObject):
                 -explode_offset * np.sin(mid_angle_rad)
             )
 
-            # Store data for later use
             slices.append({
                 'offset': offset,
                 'start_angle': current_angle,
